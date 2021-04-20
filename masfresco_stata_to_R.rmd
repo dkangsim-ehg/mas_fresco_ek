@@ -1,0 +1,93 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Translating Sara's STATA codes: 
+
+
+```{r}
+rm(list=ls())
+
+library(tidyverse)
+library(sjmisc)
+
+fresco.1<- read.csv(file.choose(), header = T)#datafeeddetail
+fresco.2<- read.csv(file.choose(), header=T)#datafeedheader
+```
+
+********************************************************************************
+*** MERGE AND CLEAN DATA ***
+*******************************************************************************
+* INSTRUCTIONS:
+
+* Download new header and detail .CSV files from SFTP site- it should have arrived on or around the 5th of the month. 
+* Save both CSV files in your "working directory" for Stata (a folder on your computer designated for Mas Fresco data and outputs). 
+* Rename the MAY header file as UCSDMonthlyDataFeedHeader_2021_05.csv and the detail file as  UCSDMonthlyDataFeedDetails_2021_05.csv <--- must be exactly like this
+
+######
+set more off
+
+*Merging raw Header and Details Data Files from Northgate
+
+*Create raw Header dataset
+cd "/Users/sarahhillervenegas/Dropbox/2 MAS FRESCO 2/1 Mas Fresco Data-Analysis-IRB KR SHV/2 Raw Northgate POS Data"
+insheet using "UCSD Data Feed Header Feb to Aug 2017.csv"
+cd "/Users/sarahhillervenegas/Dropbox/2 MAS FRESCO 2/1 Mas Fresco Data-Analysis-IRB KR SHV/3 MF STATA"
+save UCSDDataFeedHeaderFebtoAug2017, replace
+clear  
+
+```{r merging raw header and details data}
+#cd in stata means change working directories
+#insheet using "*.csv" --> read.csv (done)
+#for this project, we only have files reflecting 02.2021
+```
+
+Use by(storeid posid transactionid transactiondate loyaltycard) to collapse and merge from now on. 
+*The following "mega ID" will allow you to isolate individual transactions and merge with detail data
+*gen mega_id= storeid*posid*transactionid*transactiondate*loyaltycard
+*sort mega_id
+*format mega_id %30.0f
+
+format loyaltycard %11.0f
+
+```{r creating a new ID variable}
+
+fresco.2<-fresco.2%>%
+  unite("mega_id", c(Storeid, Transaction.ID, 
+                     Transaction.Date, LoyaltyCard), 
+        na.rm = F, remove = F)
+
+
+```
+
+*New date code that required re-doing all previous .csv insheeting 
+gen stata_transactiondate = date(transactiondate, "MD20Y")
+format stata_transactiondate %tdn/d/Y
+
+```{r formatting date}
+fresco.2<- fresco.2%>%
+  mutate(stata_transactiondate=lubridate::mdy(Transaction.Date))
+
+```
+
+*CREATING SEPARATE GROUPS FOR YEAR 1, YEAR 2, and YEAR 3- CHANGE TO UPDATE FOR NEW GROUP RANGES
+gen group=.
+replace group=1 if loyaltycard >=48700189000 & loyaltycard<=48700277153
+replace group=2 if loyaltycard >=48700277174 & loyaltycard<=48700278406
+replace group=3 if loyaltycard >=48700278407 & loyaltycard<=48700279927
+replace group=4 if loyaltycard >=48700279953 & loyaltycard<=48700280999
+replace group=5 if loyaltycard >=41100304213 & loyaltycard<=41100306000
+replace group=4 if loyaltycard ==41100304090
+replace group=5 if loyaltycard ==48700279955
+replace group=5 if loyaltycard ==48700279956
+replace group=5 if loyaltycard ==48700279957
+replace group=5 if loyaltycard ==48700279959
+
+```{r}
+fresco.2<- fresco.2%>%
+  mutate(group = sjmisc::rec(fresco.2$LoyaltyCard, rec = "48700189000:48700277153=1;
+                     48700277174:48700278406=2; 48700278407:48700279927=3;
+                     48700279953:48700280999=4; 41100304213: 41100306000=5"))%>%
+  sjmisc::rec(fresco.2$group, rec="41100304090,48700279955:48700279957,48700279959=5")
+```
